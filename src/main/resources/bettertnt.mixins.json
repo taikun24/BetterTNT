@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "io.github.taikun24.bettertnt.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "bettertnt.refmap.json",
+  "mixins": [
+    "ExplosionMixin",
+    "ServerLevelMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
