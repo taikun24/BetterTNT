@@ -9,6 +9,9 @@ public final class TNTConfig {
     public static final ForgeConfigSpec.DoubleValue MAX_EXPLOSION_MILLIS_PER_TICK;
     public static final ForgeConfigSpec.BooleanValue FLUSH_ON_SHUTDOWN;
     public static final ForgeConfigSpec.BooleanValue EXPOSURE_CACHE_ENABLED;
+    public static final ForgeConfigSpec.BooleanValue FAST_RAYS;
+    public static final ForgeConfigSpec.BooleanValue FAST_EXPOSURE;
+    public static final ForgeConfigSpec.BooleanValue FAST_TNT_COLLISIONS;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -33,6 +36,20 @@ public final class TNTConfig {
         EXPOSURE_CACHE_ENABLED = builder
                 .comment("Enable the exposure cache.")
                 .define("enabled", true);
+        builder.pop();
+
+        builder.comment("Faster versions of vanilla explosion code. They give exactly the vanilla result;",
+                "turn one off only if another mod that changes explosions misbehaves.").push("optimizations");
+        FAST_RAYS = builder
+                .comment("Reuse block lookups while an explosion's rays step through the same block.")
+                .define("fastExplosionRays", true);
+        FAST_EXPOSURE = builder
+                .comment("Faster raycasts when checking how much of an entity an explosion can see (skips air, direct chunk access).")
+                .define("fastExposureRaycast", true);
+        FAST_TNT_COLLISIONS = builder
+                .comment("Moving primed TNT only checks the few entity types that can be collided with (boats, shulkers, ...)",
+                        "instead of every entity around it.")
+                .define("fastTntCollisions", true);
         builder.pop();
 
         SPEC = builder.build();

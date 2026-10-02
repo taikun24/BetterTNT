@@ -25,6 +25,10 @@ minecraft {
             // Each Minecraft version gets its own run dir (versions/<mc>/run) so worlds never cross versions.
             workingDirectory(project.file("run"))
             property("forge.logging.console.level", "debug")
+            // Profile a dev run: ./gradlew "1.20.1:runServer" -Pjfr=C:/path/out.jfr
+            findProperty("jfr")?.let { jvmArg("-XX:StartFlightRecording=filename=$it,settings=profile") }
+            // Cross-check every optimization against vanilla: -Pverify (see Verify.java)
+            if (hasProperty("verify")) property("bettertnt.verify", "true")
             mods {
                 create(modId) {
                     source(sourceSets.main.get())

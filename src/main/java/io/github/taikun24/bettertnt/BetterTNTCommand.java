@@ -40,6 +40,10 @@ public final class BetterTNTCommand {
                             "Better TNT: %d queued, %d explosions (%.1f ms) last tick, %d deferred so far, exposure cache hit %.1f%%",
                             ExplosionThrottle.pending(), ExplosionThrottle.lastTickCount(), ExplosionThrottle.lastTickMillis(),
                             ExplosionThrottle.totalDeferred(), total == 0 ? 0.0 : hits * 100.0 / total));
+                    if (Verify.ENABLED) {
+                        reply(ctx.getSource(), "Better TNT " + Verify.summary());
+                        reply(ctx.getSource(), "Better TNT tracked: " + CollidableEntities.debugTracked(ctx.getSource().getLevel()));
+                    }
                     return ExplosionThrottle.pending();
                 })
                 .then(Commands.literal("flush").executes(ctx -> {
