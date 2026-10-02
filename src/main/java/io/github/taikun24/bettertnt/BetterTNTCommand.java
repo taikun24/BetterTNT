@@ -13,7 +13,7 @@ import net.minecraft.util.text.StringTextComponent;
 *///?}
 
 /**
- * /bettertnt          - show queue and cache stats
+ * /bettertnt          - show throttle, cache and client effect stats
  * /bettertnt flush    - run every queued explosion now
  * /bettertnt clear    - throw away every queued explosion
  */
@@ -37,9 +37,10 @@ public final class BetterTNTCommand {
                     long hits = ExposureCache.hits();
                     long total = hits + ExposureCache.misses();
                     reply(ctx.getSource(), String.format(
-                            "Better TNT: %d queued, %d explosions (%.1f ms) last tick, %d deferred so far, exposure cache hit %.1f%%",
-                            ExplosionThrottle.pending(), ExplosionThrottle.lastTickCount(), ExplosionThrottle.lastTickMillis(),
-                            ExplosionThrottle.totalDeferred(), total == 0 ? 0.0 : hits * 100.0 / total));
+                            "Better TNT: last tick %d explosions (%.1f ms), %d TNT waiting; %d queued (%d so far); exposure cache hit %.1f%%; %d effects skipped",
+                            ExplosionThrottle.lastTickCount(), ExplosionThrottle.lastTickMillis(), ExplosionThrottle.lastTickTntWaits(),
+                            ExplosionThrottle.pending(), ExplosionThrottle.totalDeferred(), total == 0 ? 0.0 : hits * 100.0 / total,
+                            ClientEffects.skipped()));
                     if (Verify.ENABLED) {
                         reply(ctx.getSource(), "Better TNT " + Verify.summary());
                         reply(ctx.getSource(), "Better TNT tracked: " + CollidableEntities.debugTracked(ctx.getSource().getLevel()));

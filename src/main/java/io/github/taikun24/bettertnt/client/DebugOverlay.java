@@ -35,8 +35,9 @@ public final class DebugOverlay {
             return;
         }
         lines.add("");
-        lines.add(String.format("[Better TNT] queued: %d, last tick: %d explosions / %.1f ms",
-                ExplosionThrottle.pending(), ExplosionThrottle.lastTickCount(), ExplosionThrottle.lastTickMillis()));
+        lines.add(String.format("[Better TNT] last tick: %d explosions / %.1f ms, TNT waiting: %d, queued: %d",
+                ExplosionThrottle.lastTickCount(), ExplosionThrottle.lastTickMillis(), ExplosionThrottle.lastTickTntWaits(),
+                ExplosionThrottle.pending()));
     }
 
     private DebugOverlay() {

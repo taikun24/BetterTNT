@@ -22,7 +22,8 @@ public class BetterTNTMixinPlugin implements IMixinConfigPlugin {
     private static final List<String> CONFLICTING_MODS = Arrays.asList("canary", "radium", "roadrunner");
     private static final String PACKAGE = "io.github.taikun24.bettertnt.mixin.";
     private static final List<String> OPTIMIZATION_MIXINS = Arrays.asList(
-            PACKAGE + "ExplosionRaysMixin", PACKAGE + "ExposureClipMixin", PACKAGE + "EntityCollideMixin");
+            PACKAGE + "ExplosionRaysMixin", PACKAGE + "ExposureClipMixin", PACKAGE + "EntityCollideMixin",
+            PACKAGE + "ExplosionRayGridMixin");
 
     private String conflict;
 

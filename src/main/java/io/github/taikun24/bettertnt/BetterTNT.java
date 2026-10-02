@@ -43,8 +43,11 @@ public class BetterTNT {
         if (event.phase == TickEvent.Phase.START) {
             Optimizations.onServerTickStart();
             FastBlockAccess.onServerTickStart();
+            ClientEffects.onServerTickStart();
             ExposureCache.onServerTickStart();
             ExplosionThrottle.onServerTickStart();
+        } else {
+            ExplosionThrottle.onServerTickEnd();
         }
     }
 
@@ -72,6 +75,7 @@ public class BetterTNT {
     /*public static void onServerStopping(FMLServerStoppingEvent event) {*/
         ExplosionThrottle.onServerStopping();
         ExposureCache.onServerStopping();
+        ClientEffects.onServerStopping();
         CollidableEntities.clear();
     }
 

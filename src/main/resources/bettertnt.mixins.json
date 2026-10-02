@@ -8,8 +8,11 @@
   "mixins": [
     "EntityCollideMixin",
     "ExplosionMixin",
+    "ExplosionPacketMixin",
+    "ExplosionRayGridMixin",
     "ExplosionRaysMixin",
     "ExposureClipMixin",
+    "PrimedTntMixin",
     "ServerLevelMixin"
   ],
   "injectors": {
