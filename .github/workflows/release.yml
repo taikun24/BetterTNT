@@ -1,0 +1,261 @@
+name: release
+
+# CurseForge へのアップロードと GitHub Release の作成。Actions タブから手動で実行する。
+#
+# 必要なシークレット (CurseForge に上げるときだけ):
+#   CF_API_TOKEN — https://legacy.curseforge.com/account/api-tokens で発行したもの。
+#                  console.curseforge.com の Core API キーでは<b>アップロードできません</b>。
+#
+# 出す前に:
+#   - gradle.properties の mod.version を上げる
+#   - CHANGELOG.md の先頭に「## <そのバージョン>」の節を書く (食い違うと止まる)
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_to:
+        # CurseForge はアップロードした<b>ファイルを API から削除できない</b> (作者ページで手動削除)。
+        # 取り消しが効かない側を既定にしないよう、既定は GitHub だけにしてある。
+        description: '公開先'
+        type: choice
+        options: ['GitHub だけ', 'GitHub と CurseForge']
+        default: 'GitHub だけ'
+      release_type:
+        description: 'CurseForge のリリース種別 (CurseForge に上げるときだけ使う)'
+        type: choice
+        options: [release, beta, alpha]
+        default: release
+      targets:
+        description: '対象'
+        type: choice
+        options: ['両方', '1.20.1 だけ', '1.16.5 だけ']
+        default: '両方'
+      dry_run:
+        description: 'アップロードせずビルドと検証だけ行う'
+        type: boolean
+        default: false
+      prerelease:
+        description: 'GitHub Release を「プレリリース」として出す'
+        type: boolean
+        default: false
+
+env:
+  CF_PROJECT_ID: '1106664'
+
+jobs:
+  # MC バージョンごとに別ジョブにしてある。片方の CurseForge アップロードだけ失敗したとき、
+  # 失敗した側だけ再実行できるようにするため (1 ジョブで両方上げると、再実行で成功済みの側を二重に上げてしまう)。
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mc: '1.20.1'
+            java: '17'
+          - mc: '1.16.5'
+            java: '8'
+
+    steps:
+      - name: 対象か判定
+        id: want
+        run: |
+          case "${{ inputs.targets }}" in
+            '両方') want=yes ;;
+            "${{ matrix.mc }} だけ") want=yes ;;
+            *) want=no ;;
+          esac
+          echo "want=$want" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.mc }} を処理するか: $want"
+
+      - uses: actions/checkout@v4
+        if: steps.want.outputs.want == 'yes'
+
+      # build.yml と同じ。21 を最後にして Gradle 本体を 21 で動かす。
+      - name: Set up JDK
+        if: steps.want.outputs.want == 'yes'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+
+      - name: Set up Gradle
+        if: steps.want.outputs.want == 'yes'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: バージョンと changelog を取り出す
+        if: steps.want.outputs.want == 'yes'
+        id: meta
+        run: |
+          version=$(grep -E '^mod.version=' gradle.properties | cut -d= -f2 | tr -d '\r')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # CHANGELOG.md の「先頭のバージョン節」だけを抜き出す。
+          # 見出しが version と食い違っていたら、書き忘れとみなして止める。
+          head=$(grep -m1 -E '^## ' CHANGELOG.md | sed -E 's/^## +//' | tr -d '\r')
+          if [ "$head" != "$version" ]; then
+            echo "::error::CHANGELOG.md の先頭が '$head' ですが mod.version は '$version' です"
+            exit 1
+          fi
+          awk '/^## /{ if (seen) exit; seen=1; next } seen' CHANGELOG.md > changelog.md
+          echo "--- changelog ---"
+          cat changelog.md
+
+      - run: chmod +x ./gradlew
+        if: steps.want.outputs.want == 'yes'
+
+      - name: Build
+        if: steps.want.outputs.want == 'yes'
+        run: ./gradlew "${{ matrix.mc }}:build" -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64
+
+      - name: jar を特定する
+        if: steps.want.outputs.want == 'yes'
+        id: jar
+        run: |
+          # reobfJar が jar を上書きしたもの。名前は build.gradle.kts の archivesName / version と揃えること。
+          jar="versions/${{ matrix.mc }}/build/libs/bettertnt-${{ steps.meta.outputs.version }}+${{ matrix.mc }}.jar"
+          test -f "$jar" || { echo "::error::$jar が見つかりません"; ls -la "versions/${{ matrix.mc }}/build/libs"; exit 1; }
+          # 配布物の中身を確認する (refmap が SRG 名になっていないと本番で Mixin が当たらない)。
+          unzip -p "$jar" META-INF/MANIFEST.MF | grep -q 'MixinConfigs: bettertnt.mixins.json' \
+            || { echo "::error::MANIFEST に MixinConfigs がありません"; exit 1; }
+          unzip -p "$jar" bettertnt.refmap.json | grep -qE 'func_|m_[0-9]+_' \
+            || { echo "::error::refmap が SRG 名になっていません"; exit 1; }
+          echo "path=$jar" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$jar")" >> "$GITHUB_OUTPUT"
+          ls -la "$jar"
+
+      # ゲームバージョンの数値 ID は API から引く。ハードコードすると
+      # CurseForge 側の採番が変わったときに黙って壊れるため。
+      - name: CurseForge のゲームバージョン ID を解決する
+        if: steps.want.outputs.want == 'yes' && !inputs.dry_run && inputs.publish_to == 'GitHub と CurseForge'
+        id: gv
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          if [ -z "$CF_API_TOKEN" ]; then
+            echo "::error::シークレット CF_API_TOKEN が設定されていません"
+            exit 1
+          fi
+          http=$(curl -sS -o versions.json -w '%{http_code}' -H "X-Api-Token: $CF_API_TOKEN" \
+            https://minecraft.curseforge.com/api/game/versions)
+          if [ "$http" != "200" ]; then
+            echo "::error::ゲームバージョンの取得に失敗しました (HTTP $http)。401/403 ならトークンの種類を確認してください"
+            cat versions.json
+            exit 1
+          fi
+
+          # <b>関数の中で exit してはいけない。</b>$(...) はサブシェルなので、
+          # そこで exit しても抜けるのはサブシェルだけでステップは成功扱いのまま進む。
+          pick() { jq -r --arg n "$1" '[.[] | select(.name == $n)][0].id // empty' versions.json; }
+          need() {
+            if [ -z "$2" ]; then
+              echo "::error::CurseForge に '$1' というゲームバージョンが見つかりません"
+              exit 1
+            fi
+          }
+          mc=$(pick '${{ matrix.mc }}');          need '${{ matrix.mc }}' "$mc"
+          loader=$(pick 'Forge');                 need 'Forge' "$loader"
+          java=$(pick 'Java ${{ matrix.java }}'); need 'Java ${{ matrix.java }}' "$java"
+
+          # <b>Environment グループ (Client / Server) も必須。</b>
+          # 抜けていると errorCode 1021 で 400 になる。
+          # 処理はサーバー側だが、シングルプレイ (内蔵サーバー) でも動くので両方を指定する。
+          client=$(pick 'Client');                need 'Client' "$client"
+          server=$(pick 'Server');                need 'Server' "$server"
+
+          echo "ids=[$mc,$loader,$java,$client,$server]" >> "$GITHUB_OUTPUT"
+          echo "MC=${{ matrix.mc }}($mc) Forge($loader) Java ${{ matrix.java }}($java) Client($client) Server($server)"
+
+      - name: CurseForge にアップロード
+        if: steps.want.outputs.want == 'yes' && !inputs.dry_run && inputs.publish_to == 'GitHub と CurseForge'
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          jq -n \
+            --rawfile changelog changelog.md \
+            --arg name "Better TNT ${{ steps.meta.outputs.version }} (${{ matrix.mc }})" \
+            --arg type "${{ inputs.release_type }}" \
+            --argjson versions '${{ steps.gv.outputs.ids }}' \
+            '{
+               changelog:     $changelog,
+               changelogType: "markdown",
+               displayName:   $name,
+               gameVersions:  $versions,
+               releaseType:   $type
+             }' > metadata.json
+          cat metadata.json
+
+          # <b>-f は使わない。</b>失敗時に本文を捨ててしまい、errorCode / errorMessage が読めなくなる。
+          http=$(curl -sS -o response.txt -w '%{http_code}' -X POST \
+            -H "X-Api-Token: $CF_API_TOKEN" \
+            -F "metadata=<metadata.json" \
+            -F "file=@${{ steps.jar.outputs.path }}" \
+            "https://minecraft.curseforge.com/api/projects/${{ env.CF_PROJECT_ID }}/upload-file")
+
+          echo "HTTP $http"
+          echo "--- response ---"
+          cat response.txt || true
+          echo
+
+          if [ "$http" != "200" ]; then
+            echo "::error::アップロードに失敗しました (HTTP $http)。400 なら上の metadata と応答の errorMessage を確認してください"
+            exit 1
+          fi
+          echo "アップロードしました: ${{ steps.jar.outputs.name }}"
+
+      - name: 成果物を残す
+        if: steps.want.outputs.want == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettertnt-${{ steps.meta.outputs.version }}-${{ matrix.mc }}
+          path: ${{ steps.jar.outputs.path }}
+          if-no-files-found: error
+
+  # 両方のビルドが通ってから、jar をまとめて 1 つの GitHub Release に出す。
+  github-release:
+    needs: release
+    if: ${{ !inputs.dry_run && inputs.targets == '両方' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: バージョンと changelog を取り出す
+        id: meta
+        run: |
+          version=$(grep -E '^mod.version=' gradle.properties | cut -d= -f2 | tr -d '\r')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          awk '/^## /{ if (seen) exit; seen=1; next } seen' CHANGELOG.md > changelog.md
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Release を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la artifacts
+          # 同じタグで再実行したときに黙って上書きしないよう、あったら止める。
+          if gh release view "v${{ steps.meta.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::タグ v${{ steps.meta.outputs.version }} の Release が既にあります"
+            exit 1
+          fi
+          # プレリリースのときは Latest を更新しないよう --prerelease を付ける
+          # (gh は --prerelease=false を受け付けないので、フラグごと出し分ける)。
+          pre=''
+          if [ "${{ inputs.prerelease }}" = 'true' ]; then
+            pre='--prerelease'
+          fi
+          gh release create "v${{ steps.meta.outputs.version }}" \
+            --title "v${{ steps.meta.outputs.version }}" \
+            --notes-file changelog.md \
+            --target "${{ github.sha }}" \
+            $pre \
+            artifacts/*.jar

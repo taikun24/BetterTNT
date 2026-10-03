@@ -1,0 +1,50 @@
+name: build
+
+# push / PR のたびに 1.16.5 と 1.20.1 の両方をビルドする。
+# Stonecutter で 1 つのソースから両方を出しているので、片方の分岐を壊していないかをここで拾う。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mc: ['1.16.5', '1.20.1']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # コンパイルは toolchain の Java 8 (1.16.5) / 17 (1.20.1)。
+      # Gradle 本体は Java 21 で動かす (Stonecutter が要求する。gradle/gradle-daemon-jvm.properties)。
+      # 最後に書いたものが JAVA_HOME になるので 21 を最後にする。
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            17
+            21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - run: chmod +x ./gradlew
+
+      - name: Build
+        run: ./gradlew "${{ matrix.mc }}:build" -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettertnt-${{ matrix.mc }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: versions/${{ matrix.mc }}/build/libs/*.jar
+          if-no-files-found: error
