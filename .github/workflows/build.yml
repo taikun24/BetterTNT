@@ -20,13 +20,13 @@ jobs:
         mc: ['1.16.5', '1.20.1']
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # コンパイルは toolchain の Java 8 (1.16.5) / 17 (1.20.1)。
       # Gradle 本体は Java 21 で動かす (Stonecutter が要求する。gradle/gradle-daemon-jvm.properties)。
       # 最後に書いたものが JAVA_HOME になるので 21 を最後にする。
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: |
@@ -34,8 +34,9 @@ jobs:
             17
             21
 
+      # v6 はキャッシュ機能が独自ライセンス (使うと Gradle の利用規約に同意したことになる) になったので v5 に留めている。
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - run: chmod +x ./gradlew
 
@@ -43,7 +44,7 @@ jobs:
         run: ./gradlew "${{ matrix.mc }}:build" -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_17_X64,JAVA_HOME_21_X64
 
       - name: Upload jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bettertnt-${{ matrix.mc }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: versions/${{ matrix.mc }}/build/libs/*.jar

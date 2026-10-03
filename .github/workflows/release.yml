@@ -69,13 +69,13 @@ jobs:
           echo "want=$want" >> "$GITHUB_OUTPUT"
           echo "${{ matrix.mc }} を処理するか: $want"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.want.outputs.want == 'yes'
 
       # build.yml と同じ。21 を最後にして Gradle 本体を 21 で動かす。
       - name: Set up JDK
         if: steps.want.outputs.want == 'yes'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: |
@@ -83,9 +83,10 @@ jobs:
             17
             21
 
+      # v6 はキャッシュ機能が独自ライセンス (使うと Gradle の利用規約に同意したことになる) になったので v5 に留めている。
       - name: Set up Gradle
         if: steps.want.outputs.want == 'yes'
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: バージョンと changelog を取り出す
         if: steps.want.outputs.want == 'yes'
@@ -209,7 +210,7 @@ jobs:
 
       - name: 成果物を残す
         if: steps.want.outputs.want == 'yes'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bettertnt-${{ steps.meta.outputs.version }}-${{ matrix.mc }}
           path: ${{ steps.jar.outputs.path }}
@@ -223,7 +224,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: バージョンと changelog を取り出す
         id: meta
@@ -232,7 +233,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           awk '/^## /{ if (seen) exit; seen=1; next } seen' CHANGELOG.md > changelog.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
